@@ -44,15 +44,17 @@ func EnsureStagingDir(dataDir string) (string, error) {
 	return dir, nil
 }
 
-// CheckSudoAccess verifies that the current process can use passwordless sudo.
-// Returns nil if sudo is not needed, or if passwordless sudo is working.
+// CheckSudoAccess verifies that the current process has NOPASSWD sudo entries.
+// Returns nil if sudo is not needed, or if passwordless sudo rules exist.
 // Returns an error with actionable guidance if sudo is needed but not configured.
 func CheckSudoAccess(binaryPath string) error {
 	if !NeedsSudo(binaryPath) {
 		return nil
 	}
-	// Test passwordless sudo with a harmless command
-	cmd := exec.Command("sudo", "-n", "true")
+	// Use sudo -n -l to list NOPASSWD entries without prompting.
+	// This works with command-specific sudoers (unlike "sudo -n true"
+	// which requires /usr/bin/true to be in the allowed commands).
+	cmd := exec.Command("sudo", "-n", "-l")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("passwordless sudo is required to replace %s but is not configured for the panel user.\n"+
 			"Fix options:\n"+

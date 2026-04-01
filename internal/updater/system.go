@@ -112,40 +112,34 @@ func ExtractBinary(tarGzPath, destPath string) error {
 			continue
 		}
 
-		// Extract to staging dir (always writable), not next to destination
-		extractDir := downloadDir()
-		tmp, err := os.CreateTemp(extractDir, ".telemt-extract-*")
+		// Extract to staging dir using predictable name matching sudoers rules.
+		// The sudoers drop-in grants NOPASSWD for exact paths like
+		//   cp -f /var/lib/telemt-panel/staging/telemt /usr/local/bin/.telemt.tmp
+		// so we must use the binary name as the staging path, not a random temp file.
+		extractPath := filepath.Join(downloadDir(), filepath.Base(destPath))
+		tmp, err := os.OpenFile(extractPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
 		if err != nil {
-			return err
+			return fmt.Errorf("create staging file %s: %w", extractPath, err)
 		}
-		tmpName := tmp.Name()
 
 		if _, err := io.Copy(tmp, tr); err != nil {
 			tmp.Close()
-			os.Remove(tmpName)
+			os.Remove(extractPath)
 			return err
 		}
 		tmp.Close()
 
-		if err := os.Chmod(tmpName, 0755); err != nil {
-			os.Remove(tmpName)
+		if err := os.Chmod(extractPath, 0755); err != nil {
+			os.Remove(extractPath)
 			return err
-		}
-
-		// Rename to the expected basename so the path matches the sudoers rule
-		// (sudoers expects e.g. /var/lib/telemt-panel/staging/telemt, not a random temp name)
-		expectedPath := filepath.Join(extractDir, filepath.Base(destPath))
-		if err := os.Rename(tmpName, expectedPath); err != nil {
-			os.Remove(tmpName)
-			return fmt.Errorf("rename extracted binary to %s: %w", expectedPath, err)
 		}
 
 		// Install to destination (uses sudo if we can't write to dest dir)
-		if err := sysutil.InstallBinary(expectedPath, destPath); err != nil {
-			os.Remove(expectedPath)
+		if err := sysutil.InstallBinary(extractPath, destPath); err != nil {
+			os.Remove(extractPath)
 			return err
 		}
-		os.Remove(expectedPath)
+		os.Remove(extractPath)
 		return nil
 	}
 }
